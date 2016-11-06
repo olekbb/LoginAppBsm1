@@ -8,7 +8,23 @@ import android.widget.Button;
 import android.widget.EditText;
 import android.widget.TextView;
 
+import java.io.IOException;
+import java.security.GeneralSecurityException;
+import java.security.NoSuchAlgorithmException;
+import java.security.SecureRandom;
+import java.security.Security;
+
+import javax.crypto.Cipher;
+import javax.crypto.KeyGenerator;
+import javax.crypto.SecretKey;
+import javax.crypto.spec.IvParameterSpec;
+
+
 public class MainActivity extends AppCompatActivity {
+    static {
+        Security.insertProviderAt(new org.spongycastle.jce.provider.
+                BouncyCastleProvider(), 1);
+    }
     private EditText loginText;
     private EditText passwordText;
     private EditText messageText;
@@ -21,9 +37,11 @@ public class MainActivity extends AppCompatActivity {
 
     public String message;
     public String login;
-    public String password;
+    public byte[] password;
     public boolean messageChanged = false;
     public boolean passwordChanged = false;
+
+    static private SecretKey key;
     @Override
     protected void onCreate(final Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -31,8 +49,16 @@ public class MainActivity extends AppCompatActivity {
 
         login = "login";
 
+        key = null;
         if (!passwordChanged){
-            password = "pwd";
+            password = new byte[256];
+            try {
+                password = encrypt("pwd");
+            } catch (GeneralSecurityException e) {
+                e.printStackTrace();
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
         }
         if (!messageChanged){
             message = "Hello";
@@ -55,7 +81,18 @@ public class MainActivity extends AppCompatActivity {
             loginButton.setOnClickListener(new View.OnClickListener() {
                 @Override
                 public void onClick(View v) {
-                    if (loginText.getText().toString().equals(login) && passwordText.getText().toString().equals(password)){
+                    boolean passwordValid = false;
+                    try {
+                        passwordValid = loginText.getText().toString().equals(login) && passwordText.getText().toString().equals(decrypt(password));
+                        System.out.println(decrypt(password));
+                        System.out.println(password);
+                    } catch (GeneralSecurityException e) {
+                        e.printStackTrace();
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                    }
+
+                    if (passwordValid){
                         textView.setVisibility(TextView.VISIBLE);
                         loginText.setVisibility(EditText.GONE);
                         passwordText.setVisibility(EditText.GONE);
@@ -79,9 +116,16 @@ public class MainActivity extends AppCompatActivity {
                             passwordButton.setOnClickListener(new View.OnClickListener(){
                                 @Override
                                 public void onClick(View v){
-                                    password = editPasswordText.getText().toString();
-                                    passwordChanged = true;
-                                    textView.setText("Password changed");
+                                    try {
+                                        password = encrypt(editPasswordText.getText().toString());
+                                        passwordChanged = true;
+                                        textView.setText("Password changed");
+                                    } catch (GeneralSecurityException e) {
+                                        e.printStackTrace();
+                                    } catch (IOException e) {
+                                        e.printStackTrace();
+                                    }
+
                                 }
                             });
                         }
@@ -139,5 +183,43 @@ public class MainActivity extends AppCompatActivity {
         if (loginButton != null){
             loginButton.setVisibility(Button.VISIBLE);
         }
+    }
+    public static SecretKey generateAESKey(int keysize)
+            throws NoSuchAlgorithmException {
+        final SecureRandom random = new SecureRandom();
+        final KeyGenerator generator = KeyGenerator.
+                getInstance("AES");
+        generator.init(keysize, random);
+        return generator.generateKey();
+    }
+
+    private static IvParameterSpec iv;
+    public static IvParameterSpec getIV() {
+        if (iv == null) {
+            byte[] ivByteArray = new byte[16];
+            // populate the array with random bytes
+            new SecureRandom().nextBytes(ivByteArray);
+            iv = new IvParameterSpec(ivByteArray);
+        }
+        return iv;
+    }
+    public static byte[] encrypt(String plainText)
+            throws GeneralSecurityException, IOException {
+        final Cipher cipher = Cipher.getInstance("AES/CBC/PKCS7Padding");
+                cipher.init(Cipher.ENCRYPT_MODE, getKey(), getIV());
+        return cipher.doFinal(plainText.getBytes("UTF-8"));
+    }
+    public static SecretKey getKey() throws NoSuchAlgorithmException
+    {
+        if (key == null) {
+            key = generateAESKey(256);
+        }
+        return key;
+    }
+    public static String decrypt(byte[] cipherText)
+            throws GeneralSecurityException, IOException {
+        final Cipher cipher = Cipher.getInstance("AES/CBC/PKCS7Padding");
+                cipher.init(Cipher.DECRYPT_MODE, getKey(),getIV());
+        return cipher.doFinal(cipherText).toString();
     }
 }
